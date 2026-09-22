@@ -1,23 +1,34 @@
 server:
   port: 8080
 
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/library}
+    username: ${DB_USERNAME:library}
+    password: ${DB_PASSWORD:library}
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
 library:
   kv:
-    mode: memory
+    mode: ${KV_MODE:etcd}
     key-prefix: /library
     draft-ttl-seconds: 300
     snapshot-file: ./data/kv-snapshot.json
-    restore-on-start: true
+    restore-on-start: false
+  etcd:
+    endpoint: ${ETCD_ENDPOINT:http://localhost:2379}
   cache:
     user-settings-ttl-seconds: 600
     user-settings-max-size: 1000
   demo-data: true
 
-spring:
-  jackson:
-    serialization:
-      write-dates-as-timestamps: false
-
 logging:
   level:
-    ru.library: DEBUG
+    ru.library: INFO
