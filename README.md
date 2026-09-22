@@ -1,60 +1,251 @@
-# Сервис заявок библиотеки (Spring Boot + хранилище «ключ–значение»)
+# Сервис заявок библиотеки
 
-Предметная область: библиотека. Основной объект: **событие**. Роль: **менеджер**.
-Обязательный сценарий: **оформление заказа**. Система хранения: **Etcd**
-(на текущем этапе — встроенная in-memory реализация с семантикой etcd, переключение через `library.kv.mode`).
+Spring Boot 3.2.5 / Java 17. Предметная область — библиотека, основной объект — событие, роль — менеджер, обязательный сценарий — оформление заказа.
+
+## Архитектура
+
+В проекте намеренно используются **две системы хранения**, потому что данные имеют разные свойства:
+
+- **PostgreSQL** — постоянные бизнес-данные: события и оформленные заказы. Для заказа важна реляционная целостность и транзакция изменения количества свободных мест + создания заказа.
+- **Etcd** — KV/coordination-данные лабораторной работы:
+  - временные заявки (draft) с lease;
+  - настройки пользователя;
+  - атомарный счётчик просмотров;
+  - optimistic concurrency через revision;
+  - watch для инвалидирования кэша.
+- **Caffeine** — локальный кэш настроек пользователя.
+
+Таким образом, Etcd не используется искусственно для данных, которым нужна реляционная модель.
 
 ## Запуск
 
-```Bash
-mvn spring-boot:run
+Требуется Docker, Docker Compose, JDK 17 и Maven.
+
+1. Запустить PostgreSQL и Etcd:
+
+```bash
+docker compose up -d
 ```
 
-Пользователи (HTTP Basic): `ivanova / pass`, `petrov / pass` — роль `MANAGER`.
+2. Проверить контейнеры:
 
-## Схема ключей
+```bash
+docker compose ps
+docker exec library-etcd etcdctl endpoint health
+```
+
+3. Запустить приложение:
+
+```mvn spring-boot:run
+```
+
+По умолчанию приложение использует:
+
+- PostgreSQL: `jdbc:postgresql://localhost:5432/library`;
+- Etcd: `http://localhost:2379`;
+- HTTP: `http://localhost:8080`;
+- KV_MODE: `etcd`.
+
+Переменные окружения:
+
+```text
+DB_URL
+DB_USERNAME
+DB_PASSWORD
+ETCD_ENDPOINT
+KV_MODE
+```
+
+Для тестирования старого in-memory эмулятора можно использовать `KV_MODE=memory`.
+
+## Модель данных Etcd
+
+Используется иерархическое пространство имён:
 
 | Ключ | Значение | Назначение |
 |---|---|---|
-| `/library/events/{eventId}` | JSON `Event` | документ события |
-| `/library/events/{eventId}/views` | число | счётчик просмотров (отдельный ключ, чтобы не конфликтовать с редактированием) |
-| `/library/orders/{orderId}` | JSON `Order` | заказ |
-| `/library/idx/orders-by-event/{eventId}/{orderId}` | `""` | вторичный индекс |
-| `/library/drafts/{draftId}` | JSON `OrderDraft` | временная заявка (под lease) |
-| `/library/idx/drafts-by-event/{eventId}/{draftId}` | `""` | индекс временных заявок (тот же lease) |
-| `/library/users/{login}/settings` | JSON `UserSettings` | настройки пользователя |
+| `/library/drafts/{draftId}` | JSON OrderDraft | временная заявка |
+| `/library/idx/drafts-by-event/{eventId}/{draftId}` | пустое значение | индекс заявок события |
+| `/library/users/{login}/settings` | JSON UserSettings | настройки пользователя |
+| `/library/events/{eventId}/views` | число | счётчик просмотров |
 
-Обоснование: иерархические префиксы дают выборки «по таблице» и «по внешнему ключу» через range-запросы;
-JSON-документ на ключ читаем и атомарно обновляем; `mod_revision` — бесплатная оптимистическая блокировка;
-индексы строятся на ключах, т.к. поиск по значению невозможен; всё, что должно быть согласовано,
-пишется одной транзакцией.
+JSON выбран для небольших самостоятельных документов: схема понятна Java-коду и не требует множества KV-ключей на поля объекта. Индексы вынесены в отдельные ключи, потому что Etcd предоставляет операции по диапазону ключей, а не реляционные JOIN.
 
-## API
+## Lease
 
-| Метод | Путь | Описание |
-|---|---|---|
-| GET | `/api/events` | список событий |
-| POST | `/api/events` | создать событие |
-| GET | `/api/events/{id}` | открыть карточку (+1 просмотр) |
-| PUT | `/api/events/{id}` + `If-Match: <revision>` | редактировать (409 при конфликте) |
-| GET | `/api/events/{id}/held` | мест удержано временными заявками |
-| POST | `/api/orders` | **оформить заказ** (`draftId` необязателен) |
-| POST | `/api/orders/{id}/cancel` | отменить заказ |
-| GET | `/api/orders?eventId=` | заказы |
-| POST | `/api/drafts` | временная заявка (TTL 300 с) |
-| GET | `/api/drafts/{id}` | заявка + оставшийся TTL |
-| POST | `/api/drafts/{id}/extend` | продлить |
-| DELETE | `/api/drafts/{id}` | отменить |
-| GET/PUT/DELETE | `/api/settings/me` | настройки пользователя (кэш) |
-| GET | `/api/settings/cache-stats` | статистика кэша |
-| GET | `/api/admin/keys?prefix=` | содержимое хранилища |
-| POST | `/api/admin/snapshot/save`, `/restore` | снапшот |
-| POST | `/api/experiments/counter`, `/orders` | эксперименты |
+Временная заявка создаётся с Etcd lease. TTL задаётся:
 
-## Реализация требований варианта
+```yaml
+library:
+  kv:
+    draft-ttl-seconds: 300
+```
 
-- **Временное хранение** — временная заявка: ключи записываются под lease, продлеваются keep-alive, при истечении/отзыве удаляются вместе с индексом.
-- **Кэширование** — настройки пользователя: Caffeine + Spring Cache, инвалидация через watch на префикс `/library/users/`.
-- **Атомарный счётчик** — просмотры события: транзакция compare-and-swap по `mod_revision` с повтором.
-- **Сохранение/восстановление** — снапшот в файл при остановке, восстановление при старте; после восстановления lease отсутствуют, «осиротевшие» временные заявки удаляются.
-- **Оформление заказа** — одна транзакция: списание мест + заказ + индекс + удаление временной заявки при условии неизменности ревизии события.
+При истечении lease Etcd автоматически удаляет связанные ключи. Продление выполняется через lease keep-alive.
+
+## Кэш
+
+`UserSettingsService` использует Caffeine поверх Etcd:
+
+1. первый запрос читает настройки из Etcd;
+2. последующие запросы берутся из локального кэша;
+3. запись обновляет Etcd и кэш;
+4. Etcd watch на `/library/users/` инвалидирует соответствующую запись кэша при внешнем изменении.
+
+Статистика доступна через:
+
+```
+GET /api/settings/cache/stats
+```
+
+## Атомарный счётчик
+
+Счётчик просмотров хранится в Etcd:
+
+```
+/library/events/{eventId}/views
+```
+
+Инкремент выполняется как compare-and-set по `modRevision`. Поэтому две параллельные записи не должны потерять обновление.
+
+В эксперименте доступны два варианта:
+
+```
+GET /api/experiments/counter?threads=20&perThread=100
+```
+
+Он сравнивает наивную последовательность read→write с CAS.
+
+## Постоянные бизнес-данные
+
+PostgreSQL содержит таблицы:
+
+- `events`;
+- `orders`.
+
+Оформление заказа выполняется в транзакции PostgreSQL:
+
+1. строка события блокируется `SELECT ... FOR UPDATE`;
+2. проверяется число свободных мест;
+3. уменьшается `free_seats`;
+4. создаётся запись заказа;
+5. транзакция фиксируется целиком.
+
+Это позволяет исследовать параллельные записи без риска overbooking. Версия события хранится в поле `version` и используется для проверки изменений при REST-обновлении через `If-Match`.
+
+## Обязательный сценарий «Оформление заказа»
+
+```
+POST /api/orders
+```
+
+Пример тела запроса:
+
+```json
+{
+  "eventId": "ID_СОБЫТИЯ",
+  "readerCard": "LIB-001",
+  "readerName": "Иван Иванов",
+  "seats": 2
+}
+```
+
+Доступ к `/api/**` защищён HTTP Basic, роль — `MANAGER`.
+
+Демо-пользователи текущего проекта:
+
+```
+ivanova / pass
+petrov / pass
+```
+
+## Исследование конкуренции
+
+Для счётчика:
+
+```
+GET /api/experiments/counter?threads=20&perThread=100
+```
+
+Сравниваются:
+
+- naive read→write;
+- CAS по revision.
+
+Для заказов:
+
+```
+GET /api/experiments/orders?attempts=50&seats=20
+```
+
+Проверяются:
+
+- число подтверждённых заказов;
+- число отклонённых;
+- остаток мест;
+- наличие overbooking;
+- время выполнения;
+- число зафиксированных конфликтов.
+
+## Persistence / Restore
+
+Для реального Etcd используются штатные snapshot-механизмы Etcd, а не имитация JSON-файлом.
+
+Сохранение snapshot:
+
+```bash
+docker exec library-etcd etcdctl --endpoints=http://127.0.0.1:2379 snapshot save /tmp/etcd-snapshot.db
+docker cp library-etcd:/tmp/etcd-snapshot.db ./data/etcd-snapshot.db
+```
+
+Для восстановления остановите приложение и восстановите snapshot штатной командой `etcdutl snapshot restore` в новый data-dir, затем запустите Etcd с этим каталогом.
+
+Для `KV_MODE=memory` старый учебный JSON snapshot остаётся доступным через `SnapshotManager`.
+
+## Основные API
+
+- `GET /api/events`
+- `GET /api/events/{id}`
+- `POST /api/events`
+- `PUT /api/events/{id}`
+- `POST /api/orders`
+- `GET /api/orders`
+- `POST /api/orders/{id}/cancel`
+- `POST /api/drafts`
+- `GET /api/drafts/{id}`
+- `POST /api/drafts/{id}/extend`
+- `DELETE /api/drafts/{id}`
+- `GET/PUT/DELETE /api/settings/me`
+- `GET /api/settings/cache/stats`
+- `GET /api/admin/keys`
+- `GET /api/admin/status`
+
+## Что демонстрирует работа
+
+1. Развёрнут отдельный Etcd.
+2. Java/Spring Boot подключается к Etcd через Jetcd.
+3. KV-модель обоснована и использует prefix/index.
+4. В Etcd хранятся временные заявки, настройки и счётчик.
+5. Lease используется для временных заявок.
+6. Caffeine используется как кэш.
+7. Счётчик просмотров обновляется атомарно.
+8. PostgreSQL обеспечивает persistence бизнес-данных.
+9. Параллельные записи исследуются через CAS и транзакционную блокировку PostgreSQL.
+10. Сделан вывод о разделении ответственности: Etcd удобен для небольших KV-данных, TTL, watch и атомарных compare-and-set, а PostgreSQL — для долговечных связанных бизнес-данных.
+
+## Структура проекта
+
+```
+Spring Boot
+├── PostgreSQL
+│   ├── events
+│   └── orders
+│
+├── Etcd / Jetcd
+│   ├── drafts + lease
+│   ├── user settings
+│   └── view counters + CAS
+│
+└── Caffeine
+    └── user settings cache
+```
