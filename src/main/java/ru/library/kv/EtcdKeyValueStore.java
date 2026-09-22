@@ -45,7 +45,7 @@ public class EtcdKeyValueStore implements KeyValueStore {
         TxnResponse r=waitFor(kv.txn().If(c).Then(t).Else(e).commit());return new TxnResult(r.isSucceeded(),r.getHeader().getRevision());
     }
     private Cmp cmp(Compare c){CmpTarget t=switch(c.target()){case VERSION->CmpTarget.version(c.number());case MOD_REVISION->CmpTarget.modRevision(c.number());case VALUE->CmpTarget.value(bs(c.text()));};Cmp.Op o=switch(c.op()){case EQUAL->Cmp.Op.EQUAL;case NOT_EQUAL->Cmp.Op.NOT_EQUAL;case GREATER->Cmp.Op.GREATER;case LESS->Cmp.Op.LESS;};return new Cmp(bs(c.key()),o,t);}
-    private Op op(KvOp x){if(x instanceof KvOp.Put p){var b=PutOption.newBuilder();if(p.leaseId()!=0)b.withLeaseId(p.leaseId());return Op.put(bs(p.key()),bs(p.value()),b.build());}KvOp.Delete d=(KvOp.Delete)x;return Op.delete(bs(d.key()),DeleteOption.newBuilder().withPrefix(d.prefix()?bs(d.key()):null).build());}
+    private Op op(KvOp x){if(x instanceof KvOp.Put p){var b=PutOption.newBuilder();if(p.leaseId()!=0)b.withLeaseId(p.leaseId());return Op.put(bs(p.key()),bs(p.value()),b.build());}KvOp.Delete d=(KvOp.Delete)x;if(d.prefix())return Op.delete(bs(d.key()),DeleteOption.newBuilder().withPrefix(bs(d.key())).build());return Op.delete(bs(d.key()));}
     public long leaseGrant(long ttl){return waitFor(lease.grant(ttl)).getID();}
     public void leaseRevoke(long id){waitFor(lease.revoke(id));}
     public long leaseKeepAlive(long id){return waitFor(lease.keepAliveOnce(id)).getTTL();}
