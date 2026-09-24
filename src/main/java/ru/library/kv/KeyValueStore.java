@@ -5,24 +5,33 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 public interface KeyValueStore {
-    Optional<KvEntry> get(String key);
-    List<KvEntry> getPrefix(String prefix);
-    long put(String key, String value);
-    long put(String key, String value, long leaseId);
-    long delete(String key);
-    long deletePrefix(String prefix);
+  Optional<KvEntry> get(String key);
 
-    TxnResult txn(List<Compare> conditions, List<KvOp> thenOps, List<KvOp> elseOps);
+  List<KvEntry> getPrefix(String prefix);
 
-    long leaseGrant(long ttlSeconds);
-    void leaseRevoke(long leaseId);
-    long leaseKeepAlive(long leaseId);
-    long leaseTimeToLive(long leaseId);
+  long put(String key, String value);
 
-    AutoCloseable watch(String prefix, Consumer<WatchEvent> listener);
+  long put(String key, String value, long leaseId);
 
-    void snapshotSave(String path);
-    void snapshotRestore(String path);
+  long delete(String key);
 
-    long currentRevision();
+  long deletePrefix(String prefix);
+
+  TxnResult txn(List<Compare> conditions, List<KvOp> thenOps, List<KvOp> elseOps);
+
+  long leaseGrant(long ttlSeconds);
+
+  void leaseRevoke(long leaseId);
+
+  long leaseKeepAlive(long leaseId);
+
+  long leaseTimeToLive(long leaseId);
+
+  AutoCloseable watch(String prefix, Consumer<WatchEvent> listener);
+
+  void snapshotSave(String path);
+
+  void snapshotRestore(String path);
+
+  long currentRevision();
 }

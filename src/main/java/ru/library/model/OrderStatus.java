@@ -1,3 +1,6 @@
 package ru.library.model;
 
-public enum OrderStatus { CONFIRMED, CANCELLED }
+public enum OrderStatus {
+  CONFIRMED,
+  CANCELLED
+}

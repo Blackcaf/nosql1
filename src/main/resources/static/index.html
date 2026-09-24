@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#153f33" />
+    <title>Библиотека — сервис заявок</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <p class="eyebrow">LIBRARY REQUESTS</p>
+          <h1>События и заявки</h1>
+        </div>
+        <div class="account">
+          <span id="current-user" class="user-chip"
+            >Менеджер не авторизован</span
+          >
+          <button id="logout" class="ghost hidden">Выйти</button>
+        </div>
+      </div>
+      <div class="topbar-rule" aria-hidden="true"></div>
+    </header>
+
+    <main class="container">
+      <section id="login-panel" class="panel login-panel">
+        <div class="ornament" aria-hidden="true">
+          <span></span><i>❦</i><span></span>
+        </div>
+        <h2>Вход менеджера</h2>
+        <form id="login-form" class="form-grid compact">
+          <label
+            >Логин<input id="login" required autocomplete="username"
+          /></label>
+          <label
+            >Пароль<input
+              id="password"
+              required
+              type="password"
+              autocomplete="off"
+          /></label>
+          <button type="submit">Войти</button>
+        </form>
+      </section>
+
+      <div id="app" class="hidden">
+        <div id="notice" class="notice hidden"></div>
+        <nav class="tabs">
+          <button class="tab active" data-section="events-section">
+            События
+          </button>
+          <button class="tab" data-section="orders-section">Заказы</button>
+          <button class="tab" data-section="drafts-section">
+            Временные заявки
+          </button>
+          <button class="tab" data-section="settings-section">Настройки</button>
+        </nav>
+
+        <section id="events-section" class="page-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">CATALOG</p>
+              <h2>Предстоящие события</h2>
+            </div>
+            <button id="refresh-events" class="secondary">Обновить</button>
+          </div>
+          <div id="events" class="cards"></div>
+        </section>
+
+        <section id="orders-section" class="page-section hidden">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">MANAGER DESK</p>
+              <h2>Оформленные заказы</h2>
+            </div>
+            <button id="refresh-orders" class="secondary">Обновить</button>
+          </div>
+          <div id="orders" class="table-wrap"></div>
+        </section>
+
+        <section id="drafts-section" class="page-section hidden">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">ETCD LEASE</p>
+              <h2>Временные заявки</h2>
+            </div>
+            <button id="refresh-drafts" class="secondary">Обновить</button>
+          </div>
+          <div id="drafts" class="table-wrap"></div>
+        </section>
+
+        <section id="settings-section" class="page-section hidden">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">PROFILE</p>
+              <h2>Настройки пользователя</h2>
+            </div>
+          </div>
+          <form id="settings-form" class="panel form-grid">
+            <label
+              >Язык<select id="setting-language">
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+              </select></label
+            >
+            <label
+              >Тема<select id="setting-theme">
+                <option value="light">Светлая</option>
+                <option value="dark">Тёмная</option>
+              </select></label
+            >
+            <label>Зал по умолчанию<input id="setting-hall" /></label>
+            <label class="checkbox"
+              ><input id="setting-email" type="checkbox" /> Уведомления по
+              электронной почте</label
+            >
+            <div class="actions">
+              <button type="submit">Сохранить настройки</button
+              ><button type="button" id="reset-settings" class="secondary">
+                Сбросить
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </main>
+
+    <dialog id="order-dialog">
+      <form method="dialog" id="order-form" class="dialog-form">
+        <button
+          type="button"
+          class="close"
+          id="close-order"
+          aria-label="Закрыть"
+        >
+          ×
+        </button>
+        <p class="eyebrow">НОВЫЙ ЗАКАЗ</p>
+        <h2>Оформление заказа</h2>
+        <p id="order-event" class="muted"></p>
+        <p id="order-error" class="dialog-error hidden"></p>
+        <input id="order-event-id" type="hidden" />
+        <label
+          >Номер читательского билета<input id="reader-card" required
+        /></label>
+        <label>ФИО читателя<input id="reader-name" required /></label>
+        <label
+          >Количество мест<input
+            id="order-seats"
+            type="number"
+            min="1"
+            value="1"
+            required
+        /></label>
+        <button type="submit">Подтвердить заказ</button>
+      </form>
+    </dialog>
+
+    <dialog id="draft-dialog">
+      <form method="dialog" id="draft-form" class="dialog-form">
+        <button
+          type="button"
+          class="close"
+          id="close-draft"
+          aria-label="Закрыть"
+        >
+          ×
+        </button>
+        <p class="eyebrow">LEASE · 5 МИНУТ</p>
+        <h2>Временная заявка</h2>
+        <p id="draft-event" class="muted"></p>
+        <p id="draft-error" class="dialog-error hidden"></p>
+        <input id="draft-event-id" type="hidden" />
+        <label
+          >Номер читательского билета<input id="draft-card" required
+        /></label>
+        <label>ФИО читателя<input id="draft-name" required /></label>
+        <label
+          >Количество мест<input
+            id="draft-seats"
+            type="number"
+            min="1"
+            value="1"
+            required
+        /></label>
+        <button type="submit">Зарезервировать на 5 минут</button>
+      </form>
+    </dialog>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,19 +1,19 @@
 # Сервис заявок библиотеки
 
-Spring Boot 3.2.5 / Java 17. Предметная область — библиотека, основной объект — событие, роль — менеджер, обязательный сценарий — оформление заказа.
+Spring Boot 3.2.5 / Java 17. Предметная область - библиотека, основной объект - событие, роль - менеджер, обязательный сценарий - оформление заказа.
 
 ## Архитектура
 
 В проекте намеренно используются **две системы хранения**, потому что данные имеют разные свойства:
 
-- **PostgreSQL** — постоянные бизнес-данные: события и оформленные заказы. Для заказа важна реляционная целостность и транзакция изменения количества свободных мест + создания заказа.
-- **Etcd** — KV/coordination-данные лабораторной работы:
+- **PostgreSQL** - постоянные бизнес-данные: события и оформленные заказы. Для заказа важна реляционная целостность и транзакция изменения количества свободных мест + создания заказа.
+- **Etcd** - KV/coordination-данные лабораторной работы:
   - временные заявки (draft) с lease;
   - настройки пользователя;
   - атомарный счётчик просмотров;
   - optimistic concurrency через revision;
   - watch для инвалидирования кэша.
-- **Caffeine** — локальный кэш настроек пользователя.
+- **Caffeine** - локальный кэш настроек пользователя.
 
 Таким образом, Etcd не используется искусственно для данных, которым нужна реляционная модель.
 
@@ -36,25 +36,33 @@ docker exec library-etcd etcdctl endpoint health
 
 3. Запустить приложение:
 
-```mvn spring-boot:run
+```
+mvn spring-boot:run
 ```
 
 По умолчанию приложение использует:
 
-- PostgreSQL: `jdbc:postgresql://localhost:5432/library`;
+- PostgreSQL: `jdbc:postgresql://localhost:5433/library`;
 - Etcd: `http://localhost:2379`;
 - HTTP: `http://localhost:8080`;
 - KV_MODE: `etcd`.
 
+После запуска откройте `http://localhost:8080/`. Встроенный фронтенд менеджера
+реализован на статических ресурсах Spring Boot (`src/main/resources/static`) и
+использует REST API приложения. Он поддерживает вход по Basic Auth, просмотр
+событий и счётчиков, оформление заказа, временные заявки с lease, отмену
+заказов и редактирование пользовательских настроек.
+
 Переменные окружения:
 
 ```text
-DB_URL
-DB_USERNAME
-DB_PASSWORD
 ETCD_ENDPOINT
 KV_MODE
 ```
+
+Параметры PostgreSQL задаются в `spring.datasource` файла
+`src/main/resources/application.yml`; переменные `DB_URL`, `DB_USERNAME` и
+`DB_PASSWORD` текущая конфигурация не подставляет автоматически.
 
 Для тестирования старого in-memory эмулятора можно использовать `KV_MODE=memory`.
 
@@ -95,7 +103,7 @@ library:
 Статистика доступна через:
 
 ```
-GET /api/settings/cache/stats
+GET /api/settings/cache-stats
 ```
 
 ## Атомарный счётчик
@@ -107,14 +115,17 @@ GET /api/settings/cache/stats
 ```
 
 Инкремент выполняется как compare-and-set по `modRevision`. Поэтому две параллельные записи не должны потерять обновление.
+В пользовательском интерфейсе просмотр засчитывается при открытии формы оформления
+заказа или формы временной заявки. Обновление списка событий само по себе просмотром
+не считается.
 
 В эксперименте доступны два варианта:
 
 ```
-GET /api/experiments/counter?threads=20&perThread=100
+POST /api/experiments/counter?threads=20&perThread=100
 ```
 
-Он сравнивает наивную последовательность read→write с CAS.
+Он сравнивает наивную последовательность read-write с CAS.
 
 ## Постоянные бизнес-данные
 
@@ -150,7 +161,7 @@ POST /api/orders
 }
 ```
 
-Доступ к `/api/**` защищён HTTP Basic, роль — `MANAGER`.
+Доступ к `/api/**` защищён HTTP Basic, роль - `MANAGER`.
 
 Демо-пользователи текущего проекта:
 
@@ -164,7 +175,7 @@ petrov / pass
 Для счётчика:
 
 ```
-GET /api/experiments/counter?threads=20&perThread=100
+POST /api/experiments/counter?threads=20&perThread=100
 ```
 
 Сравниваются:
@@ -175,7 +186,7 @@ GET /api/experiments/counter?threads=20&perThread=100
 Для заказов:
 
 ```
-GET /api/experiments/orders?attempts=50&seats=20
+POST /api/experiments/orders?attempts=50&seats=20
 ```
 
 Проверяются:
@@ -188,8 +199,6 @@ GET /api/experiments/orders?attempts=50&seats=20
 - число зафиксированных конфликтов.
 
 ## Persistence / Restore
-
-Для реального Etcd используются штатные snapshot-механизмы Etcd, а не имитация JSON-файлом.
 
 Сохранение snapshot:
 
@@ -216,7 +225,7 @@ docker cp library-etcd:/tmp/etcd-snapshot.db ./data/etcd-snapshot.db
 - `POST /api/drafts/{id}/extend`
 - `DELETE /api/drafts/{id}`
 - `GET/PUT/DELETE /api/settings/me`
-- `GET /api/settings/cache/stats`
+- `GET /api/settings/cache-stats`
 - `GET /api/admin/keys`
 - `GET /api/admin/status`
 

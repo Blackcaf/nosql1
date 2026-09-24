@@ -7,7 +7,13 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class EtcdConfig {
-    @Bean(destroyMethod="close")
-    Client etcdClient(AppProperties props){return Client.builder().endpoints(props.etcd().endpoint()).build();}
-    @Bean KV etcdKv(Client client){return client.getKVClient();}
+  @Bean(destroyMethod = "close")
+  Client etcdClient(AppProperties props) {
+    return Client.builder().endpoints(props.etcd().endpoint()).build();
+  }
+
+  @Bean
+  KV etcdKv(Client client) {
+    return client.getKVClient();
+  }
 }

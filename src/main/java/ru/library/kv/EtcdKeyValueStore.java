@@ -16,260 +16,224 @@ import io.etcd.jetcd.options.LeaseOption;
 import io.etcd.jetcd.options.PutOption;
 import io.etcd.jetcd.options.WatchOption;
 import io.etcd.jetcd.watch.WatchEvent;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
-
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(
-        name = "library.kv.mode",
-        havingValue = "etcd"
-)
+@ConditionalOnProperty(name = "library.kv.mode", havingValue = "etcd")
 public class EtcdKeyValueStore implements KeyValueStore {
 
-    private final KV kv;
-    private final Lease lease;
-    private final Watch watch;
+  private final KV kv;
+  private final Lease lease;
+  private final Watch watch;
 
-    public EtcdKeyValueStore(Client client) {
-        this.kv = client.getKVClient();
-        this.lease = client.getLeaseClient();
-        this.watch = client.getWatchClient();
+  public EtcdKeyValueStore(Client client) {
+    this.kv = client.getKVClient();
+    this.lease = client.getLeaseClient();
+    this.watch = client.getWatchClient();
+  }
+
+  private static ByteSequence toByteSequence(String value) {
+    return ByteSequence.from(value, StandardCharsets.UTF_8);
+  }
+
+  private static String toString(ByteSequence value) {
+    return value.toString(StandardCharsets.UTF_8);
+  }
+
+  private <T> T waitFor(CompletableFuture<T> future) {
+    try {
+      return future.get();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new KvException("Операция etcd была прервана", e);
+    } catch (ExecutionException e) {
+      throw new KvException("Ошибка при выполнении операции etcd", e.getCause());
+    }
+  }
+
+  private KvEntry toEntry(io.etcd.jetcd.KeyValue value) {
+    return new KvEntry(
+        toString(value.getKey()),
+        toString(value.getValue()),
+        value.getCreateRevision(),
+        value.getModRevision(),
+        value.getVersion(),
+        value.getLease());
+  }
+
+  @Override
+  public Optional<KvEntry> get(String key) {
+    GetResponse response = waitFor(kv.get(toByteSequence(key)));
+
+    if (response.getKvs().isEmpty()) {
+      return Optional.empty();
     }
 
-    private static ByteSequence toByteSequence(String value) {
-        return ByteSequence.from(value, StandardCharsets.UTF_8);
+    return Optional.of(toEntry(response.getKvs().get(0)));
+  }
+
+  @Override
+  public List<KvEntry> getPrefix(String prefix) {
+    GetOption option = GetOption.newBuilder().withPrefix(toByteSequence(prefix)).build();
+
+    GetResponse response = waitFor(kv.get(toByteSequence(prefix), option));
+
+    return response.getKvs().stream().map(this::toEntry).toList();
+  }
+
+  @Override
+  public long put(String key, String value) {
+    return put(key, value, 0);
+  }
+
+  @Override
+  public long put(String key, String value, long leaseId) {
+    PutOption.Builder builder = PutOption.newBuilder();
+
+    if (leaseId != 0) {
+      builder.withLeaseId(leaseId);
     }
 
-    private static String toString(ByteSequence value) {
-        return value.toString(StandardCharsets.UTF_8);
-    }
+    return waitFor(kv.put(toByteSequence(key), toByteSequence(value), builder.build()))
+        .getHeader()
+        .getRevision();
+  }
 
-    private <T> T waitFor(CompletableFuture<T> future) {
-        try {
-            return future.get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new KvException("Операция etcd была прервана", e);
-        } catch (ExecutionException e) {
-            throw new KvException("Ошибка при выполнении операции etcd", e.getCause());
-        }
-    }
+  @Override
+  public long delete(String key) {
+    return waitFor(kv.delete(toByteSequence(key))).getHeader().getRevision();
+  }
 
-    private KvEntry toEntry(io.etcd.jetcd.KeyValue value) {
-        return new KvEntry(
-                toString(value.getKey()),
-                toString(value.getValue()),
-                value.getCreateRevision(),
-                value.getModRevision(),
-                value.getVersion(),
-                value.getLease()
-        );
-    }
+  @Override
+  public long deletePrefix(String prefix) {
+    DeleteOption option = DeleteOption.newBuilder().withPrefix(toByteSequence(prefix)).build();
 
-    @Override
-    public Optional<KvEntry> get(String key) {
-        GetResponse response = waitFor(kv.get(toByteSequence(key)));
+    return waitFor(kv.delete(toByteSequence(prefix), option)).getHeader().getRevision();
+  }
 
-        if (response.getKvs().isEmpty()) {
-            return Optional.empty();
-        }
+  @Override
+  public TxnResult txn(List<Compare> conditions, List<KvOp> thenOps, List<KvOp> elseOps) {
+    Cmp[] comparisons = conditions.stream().map(this::toCmp).toArray(Cmp[]::new);
 
-        return Optional.of(toEntry(response.getKvs().get(0)));
-    }
+    Op[] thenOperations = thenOps.stream().map(this::toOp).toArray(Op[]::new);
 
-    @Override
-    public List<KvEntry> getPrefix(String prefix) {
-        GetOption option = GetOption.newBuilder()
-                .withPrefix(toByteSequence(prefix))
-                .build();
+    Op[] elseOperations = elseOps.stream().map(this::toOp).toArray(Op[]::new);
 
-        GetResponse response = waitFor(
-                kv.get(toByteSequence(prefix), option)
-        );
+    TxnResponse response =
+        waitFor(kv.txn().If(comparisons).Then(thenOperations).Else(elseOperations).commit());
 
-        return response.getKvs()
-                .stream()
-                .map(this::toEntry)
-                .toList();
-    }
+    return new TxnResult(response.isSucceeded(), response.getHeader().getRevision());
+  }
 
-    @Override
-    public long put(String key, String value) {
-        return put(key, value, 0);
-    }
+  private Cmp toCmp(Compare compare) {
+    CmpTarget target =
+        switch (compare.target()) {
+          case VERSION -> CmpTarget.version(compare.number());
 
-    @Override
-    public long put(
-            String key,
-            String value,
-            long leaseId
-    ) {
-        PutOption.Builder builder = PutOption.newBuilder();
+          case MOD_REVISION -> CmpTarget.modRevision(compare.number());
 
-        if (leaseId != 0) {
-            builder.withLeaseId(leaseId);
-        }
-
-        return waitFor(kv.put(toByteSequence(key), toByteSequence(value), builder.build())).getHeader().getRevision();
-    }
-
-    @Override
-    public long delete(String key) {
-        return waitFor(kv.delete(toByteSequence(key))).getHeader().getRevision();
-    }
-
-    @Override
-    public long deletePrefix(String prefix) {
-        DeleteOption option = DeleteOption.newBuilder()
-                .withPrefix(toByteSequence(prefix))
-                .build();
-
-        return waitFor(kv.delete(toByteSequence(prefix), option)).getHeader().getRevision();
-    }
-
-    @Override
-    public TxnResult txn(
-            List<Compare> conditions,
-            List<KvOp> thenOps,
-            List<KvOp> elseOps
-    ) {
-        Cmp[] comparisons = conditions
-                .stream()
-                .map(this::toCmp)
-                .toArray(Cmp[]::new);
-
-        Op[] thenOperations = thenOps
-                .stream()
-                .map(this::toOp)
-                .toArray(Op[]::new);
-
-        Op[] elseOperations = elseOps
-                .stream()
-                .map(this::toOp)
-                .toArray(Op[]::new);
-
-        TxnResponse response = waitFor(kv.txn().If(comparisons).Then(thenOperations).Else(elseOperations).commit());
-
-        return new TxnResult(response.isSucceeded(), response.getHeader().getRevision());
-    }
-
-    private Cmp toCmp(Compare compare) {
-        CmpTarget target = switch (compare.target()) {
-            case VERSION -> CmpTarget.version(compare.number());
-
-            case MOD_REVISION -> CmpTarget.modRevision(compare.number());
-
-            case VALUE -> CmpTarget.value(toByteSequence(compare.text()));
+          case VALUE -> CmpTarget.value(toByteSequence(compare.text()));
         };
 
-        Cmp.Op operation = switch (compare.op()) {
-            case EQUAL -> Cmp.Op.EQUAL;
-            case NOT_EQUAL -> Cmp.Op.NOT_EQUAL;
-            case GREATER -> Cmp.Op.GREATER;
-            case LESS -> Cmp.Op.LESS;
+    Cmp.Op operation =
+        switch (compare.op()) {
+          case EQUAL -> Cmp.Op.EQUAL;
+          case NOT_EQUAL -> Cmp.Op.NOT_EQUAL;
+          case GREATER -> Cmp.Op.GREATER;
+          case LESS -> Cmp.Op.LESS;
         };
 
-        return new Cmp(toByteSequence(compare.key()), operation, target);
+    return new Cmp(toByteSequence(compare.key()), operation, target);
+  }
+
+  private Op toOp(KvOp operation) {
+    if (operation instanceof KvOp.Put put) {
+
+      PutOption.Builder builder = PutOption.newBuilder();
+
+      if (put.leaseId() != 0) {
+        builder.withLeaseId(put.leaseId());
+      }
+
+      return Op.put(toByteSequence(put.key()), toByteSequence(put.value()), builder.build());
     }
 
-    private Op toOp(KvOp operation) {
-        if (operation instanceof KvOp.Put put) {
+    KvOp.Delete delete = (KvOp.Delete) operation;
 
-            PutOption.Builder builder = PutOption.newBuilder();
+    if (delete.prefix()) {
+      DeleteOption option =
+          DeleteOption.newBuilder().withPrefix(toByteSequence(delete.key())).build();
 
-            if (put.leaseId() != 0) {
-                builder.withLeaseId(put.leaseId());
-            }
-
-            return Op.put(toByteSequence(put.key()), toByteSequence(put.value()), builder.build());
-        }
-
-        KvOp.Delete delete = (KvOp.Delete) operation;
-
-        if (delete.prefix()) {
-            DeleteOption option = DeleteOption
-                    .newBuilder()
-                    .withPrefix(toByteSequence(delete.key()))
-                    .build();
-
-            return Op.delete(
-                    toByteSequence(delete.key()),
-                    option
-            );
-        }
-
-        return Op.delete(toByteSequence(delete.key()), DeleteOption.DEFAULT);
+      return Op.delete(toByteSequence(delete.key()), option);
     }
 
-    @Override
-    public long leaseGrant(long ttl) {
-        return waitFor(lease.grant(ttl)).getID();
+    return Op.delete(toByteSequence(delete.key()), DeleteOption.DEFAULT);
+  }
+
+  @Override
+  public long leaseGrant(long ttl) {
+    return waitFor(lease.grant(ttl)).getID();
+  }
+
+  @Override
+  public void leaseRevoke(long id) {
+    waitFor(lease.revoke(id));
+  }
+
+  @Override
+  public long leaseKeepAlive(long id) {
+    return waitFor(lease.keepAliveOnce(id)).getTTL();
+  }
+
+  @Override
+  public long leaseTimeToLive(long id) {
+    try {
+      return waitFor(lease.timeToLive(id, LeaseOption.DEFAULT)).getTTL();
+    } catch (Exception e) {
+      return -1;
     }
+  }
 
-    @Override
-    public void leaseRevoke(long id) {waitFor(lease.revoke(id));
-    }
+  @Override
+  public AutoCloseable watch(String prefix, Consumer<ru.library.kv.WatchEvent> listener) {
+    WatchOption option = WatchOption.newBuilder().withPrefix(toByteSequence(prefix)).build();
 
-    @Override
-    public long leaseKeepAlive(long id) {
-        return waitFor(lease.keepAliveOnce(id)).getTTL();
-    }
+    return watch.watch(
+        toByteSequence(prefix),
+        option,
+        response -> {
+          for (WatchEvent event : response.getEvents()) {
+            io.etcd.jetcd.KeyValue keyValue = event.getKeyValue();
 
-    @Override
-    public long leaseTimeToLive(long id) {
-        try {
-            return waitFor(lease.timeToLive(id, LeaseOption.DEFAULT)).getTTL();
-        } catch (Exception e) {
-            return -1;
-        }
-    }
+            ru.library.kv.WatchEvent.Type type =
+                event.getEventType() == WatchEvent.EventType.PUT
+                    ? ru.library.kv.WatchEvent.Type.PUT
+                    : ru.library.kv.WatchEvent.Type.DELETE;
 
-    @Override
-    public AutoCloseable watch(
-            String prefix,
-            Consumer<ru.library.kv.WatchEvent> listener
-    ) {
-        WatchOption option = WatchOption.newBuilder()
-                .withPrefix(toByteSequence(prefix))
-                .build();
+            listener.accept(new ru.library.kv.WatchEvent(type, toEntry(keyValue), null));
+          }
+        });
+  }
 
-        return watch.watch(
-                toByteSequence(prefix),
-                option,
-                response -> {
-                    for (WatchEvent event : response.getEvents()) {
-                        io.etcd.jetcd.KeyValue keyValue = event.getKeyValue();
+  @Override
+  public void snapshotSave(String path) {
+    throw new KvException("Для настоящего etcd используйте " + "команду etcdctl snapshot save");
+  }
 
-                        ru.library.kv.WatchEvent.Type type =
-                                event.getEventType() == WatchEvent.EventType.PUT
-                                        ? ru.library.kv.WatchEvent.Type.PUT
-                                        : ru.library.kv.WatchEvent.Type.DELETE;
+  @Override
+  public void snapshotRestore(String path) {
+    throw new KvException("Для настоящего etcd используйте " + "команду etcdctl snapshot restore");
+  }
 
-                        listener.accept(new ru.library.kv.WatchEvent(type, toEntry(keyValue), null));
-                    }
-                }
-        );
-    }
-
-    @Override
-    public void snapshotSave(String path) {
-        throw new KvException("Для настоящего etcd используйте " + "команду etcdctl snapshot save");
-    }
-
-    @Override
-    public void snapshotRestore(String path) {
-        throw new KvException("Для настоящего etcd используйте " + "команду etcdctl snapshot restore");
-    }
-
-    @Override
-    public long currentRevision() {
-        return waitFor(kv.get(toByteSequence("/library/__revision_probe__"))).getHeader().getRevision();
-    }
+  @Override
+  public long currentRevision() {
+    return waitFor(kv.get(toByteSequence("/library/__revision_probe__"))).getHeader().getRevision();
+  }
 }

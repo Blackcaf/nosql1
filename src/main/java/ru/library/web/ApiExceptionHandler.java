@@ -11,21 +11,29 @@ import ru.library.kv.KvException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
-    public record Err(String error, String message) {}
+  public record Err(String error, String message) {}
 
-    @ExceptionHandler(NotFoundException.class)
-    @ResponseStatus(HttpStatus.NOT_FOUND)
-    public Err notFound(RuntimeException e) { return new Err("not_found", e.getMessage()); }
+  @ExceptionHandler(NotFoundException.class)
+  @ResponseStatus(HttpStatus.NOT_FOUND)
+  public Err notFound(RuntimeException e) {
+    return new Err("not_found", e.getMessage());
+  }
 
-    @ExceptionHandler(ValidationException.class)
-    @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
-    public Err validation(RuntimeException e) { return new Err("validation", e.getMessage()); }
+  @ExceptionHandler(ValidationException.class)
+  @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+  public Err validation(RuntimeException e) {
+    return new Err("validation", e.getMessage());
+  }
 
-    @ExceptionHandler(ConflictException.class)
-    @ResponseStatus(HttpStatus.CONFLICT)
-    public Err conflict(RuntimeException e) { return new Err("conflict", e.getMessage()); }
+  @ExceptionHandler(ConflictException.class)
+  @ResponseStatus(HttpStatus.CONFLICT)
+  public Err conflict(RuntimeException e) {
+    return new Err("conflict", e.getMessage());
+  }
 
-    @ExceptionHandler(KvException.class)
-    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
-    public Err storage(RuntimeException e) { return new Err("storage_error", e.getMessage()); }
+  @ExceptionHandler(KvException.class)
+  @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+  public Err storage(RuntimeException e) {
+    return new Err("storage_error", e.getMessage());
+  }
 }
