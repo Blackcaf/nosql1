@@ -45,7 +45,6 @@ mvn spring-boot:run
 - PostgreSQL: `jdbc:postgresql://localhost:5433/library`;
 - Etcd: `http://localhost:2379`;
 - HTTP: `http://localhost:8080`;
-- KV_MODE: `etcd`.
 
 После запуска откройте `http://localhost:8080/`. Встроенный фронтенд менеджера
 реализован на статических ресурсах Spring Boot (`src/main/resources/static`) и
@@ -57,14 +56,11 @@ mvn spring-boot:run
 
 ```text
 ETCD_ENDPOINT
-KV_MODE
 ```
 
 Параметры PostgreSQL задаются в `spring.datasource` файла
 `src/main/resources/application.yml`; переменные `DB_URL`, `DB_USERNAME` и
 `DB_PASSWORD` текущая конфигурация не подставляет автоматически.
-
-Для тестирования старого in-memory эмулятора можно использовать `KV_MODE=memory`.
 
 ## Модель данных Etcd
 
@@ -208,8 +204,6 @@ docker cp library-etcd:/tmp/etcd-snapshot.db ./data/etcd-snapshot.db
 ```
 
 Для восстановления остановите приложение и восстановите snapshot штатной командой `etcdutl snapshot restore` в новый data-dir, затем запустите Etcd с этим каталогом.
-
-Для `KV_MODE=memory` старый учебный JSON snapshot остаётся доступным через `SnapshotManager`.
 
 ## Основные API
 

@@ -22,11 +22,9 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(name = "library.kv.mode", havingValue = "etcd")
 public class EtcdKeyValueStore implements KeyValueStore {
 
   private final KV kv;
@@ -220,16 +218,6 @@ public class EtcdKeyValueStore implements KeyValueStore {
             listener.accept(new ru.library.kv.WatchEvent(type, toEntry(keyValue), null));
           }
         });
-  }
-
-  @Override
-  public void snapshotSave(String path) {
-    throw new KvException("Для настоящего etcd используйте " + "команду etcdctl snapshot save");
-  }
-
-  @Override
-  public void snapshotRestore(String path) {
-    throw new KvException("Для настоящего etcd используйте " + "команду etcdctl snapshot restore");
   }
 
   @Override

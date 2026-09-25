@@ -17,11 +17,8 @@ spring:
 
 library:
   kv:
-    mode: ${KV_MODE:etcd}
     key-prefix: /library
     draft-ttl-seconds: 300
-    snapshot-file: ./data/kv-snapshot.json
-    restore-on-start: false
   etcd:
     endpoint: ${ETCD_ENDPOINT:http://localhost:2379}
   cache:

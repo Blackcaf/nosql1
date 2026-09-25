@@ -29,9 +29,5 @@ public interface KeyValueStore {
 
   AutoCloseable watch(String prefix, Consumer<WatchEvent> listener);
 
-  void snapshotSave(String path);
-
-  void snapshotRestore(String path);
-
   long currentRevision();
 }

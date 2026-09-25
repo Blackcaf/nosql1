@@ -21,7 +21,7 @@ import ru.library.model.Order;
 import ru.library.web.dto.EventView;
 import ru.library.web.dto.OrderRequest;
 
-@SpringBootTest(properties = {"library.demo-data=false", "library.kv.restore-on-start=false"})
+@SpringBootTest(properties = {"library.demo-data=false"})
 class OrderServiceConcurrencyTest {
 
   @Autowired EventService events;
