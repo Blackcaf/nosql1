@@ -1,13 +1,10 @@
 package ru.library.model;
 
-public record UserSettings(
-    String login,
-    String language,
-    int pageSize,
-    String theme,
-    String defaultHall,
-    boolean emailNotifications) {
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+public record UserSettings(String login, String language, String theme) {
   public static UserSettings defaults(String login) {
-    return new UserSettings(login, "ru", 20, "light", null, true);
+    return new UserSettings(login, "ru", "light");
   }
 }

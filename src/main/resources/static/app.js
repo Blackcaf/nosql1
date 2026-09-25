@@ -15,11 +15,9 @@ const TEXT = {
     settings: "Настройки",
     upcoming: "Предстоящие события",
     refresh: "Обновить",
-    catalog: "Каталог",
     order: "Оформить заказ",
     draft: "Временная заявка",
     noEvents: "Событий пока нет.",
-    view: "Посмотреть",
     noOrders: "Оформленных заказов пока нет.",
     noDrafts: "Активных временных заявок нет.",
     seats: "мест",
@@ -38,8 +36,6 @@ const TEXT = {
     reset: "Сбросить",
     language: "Язык",
     theme: "Тема",
-    hall: "Зал по умолчанию",
-    email: "Уведомления по электронной почте",
     light: "Светлая",
     dark: "Тёмная",
     confirm: "Подтвердить заказ",
@@ -60,11 +56,9 @@ const TEXT = {
     settings: "Settings",
     upcoming: "Upcoming events",
     refresh: "Refresh",
-    catalog: "Catalog",
     order: "Place order",
     draft: "Temporary request",
     noEvents: "There are no events yet.",
-    view: "View",
     noOrders: "There are no orders yet.",
     noDrafts: "There are no active temporary requests.",
     seats: "seats",
@@ -83,8 +77,6 @@ const TEXT = {
     reset: "Reset",
     language: "Language",
     theme: "Theme",
-    hall: "Default hall",
-    email: "Email notifications",
     light: "Light",
     dark: "Dark",
     confirm: "Confirm order",
@@ -147,8 +139,6 @@ function setLanguage(value) {
   const labels = $("settings-form").querySelectorAll("label");
   labels[0].firstChild.textContent = t("language");
   labels[1].firstChild.textContent = t("theme");
-  labels[2].firstChild.textContent = t("hall");
-  labels[3].lastChild.textContent = ` ${t("email")}`;
   $("setting-theme").options[0].textContent = t("light");
   $("setting-theme").options[1].textContent = t("dark");
   $("settings-form").querySelector("button[type=submit]").textContent =
@@ -201,8 +191,7 @@ async function api(path, options = {}) {
     let detail = `Ошибка ${response.status}`;
     try {
       detail = (await response.json()).message || detail;
-    } catch (_) {
-    }
+    } catch (_) {}
     throw new Error(detail);
   }
   return response.status === 204 ? null : response.json();
@@ -371,8 +360,6 @@ async function loadSettings() {
   const s = await api("/api/settings/me");
   $("setting-language").value = language;
   $("setting-theme").value = s.theme || "light";
-  $("setting-hall").value = s.defaultHall || "";
-  $("setting-email").checked = s.emailNotifications;
 }
 
 async function enter(login, password) {
@@ -477,10 +464,7 @@ $("settings-form").addEventListener("submit", async (event) => {
       method: "PUT",
       body: JSON.stringify({
         language: selectedLanguage,
-        pageSize: 20,
         theme: selectedTheme,
-        defaultHall: $("setting-hall").value || null,
-        emailNotifications: $("setting-email").checked,
       }),
     });
     applyTheme(selectedTheme);

@@ -15,8 +15,6 @@ public interface KeyValueStore {
 
   long delete(String key);
 
-  long deletePrefix(String prefix);
-
   TxnResult txn(List<Compare> conditions, List<KvOp> thenOps, List<KvOp> elseOps);
 
   long leaseGrant(long ttlSeconds);

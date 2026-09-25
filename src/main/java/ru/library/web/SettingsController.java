@@ -22,14 +22,7 @@ public class SettingsController {
 
   @PutMapping("/me")
   public UserSettings save(@RequestBody UserSettings s, Principal p) {
-    return service.save(
-        new UserSettings(
-            p.getName(),
-            s.language(),
-            s.pageSize(),
-            s.theme(),
-            s.defaultHall(),
-            s.emailNotifications()));
+    return service.save(new UserSettings(p.getName(), s.language(), s.theme()));
   }
 
   @DeleteMapping("/me")

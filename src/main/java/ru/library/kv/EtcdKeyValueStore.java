@@ -10,7 +10,6 @@ import io.etcd.jetcd.kv.TxnResponse;
 import io.etcd.jetcd.op.Cmp;
 import io.etcd.jetcd.op.CmpTarget;
 import io.etcd.jetcd.op.Op;
-import io.etcd.jetcd.options.DeleteOption;
 import io.etcd.jetcd.options.GetOption;
 import io.etcd.jetcd.options.LeaseOption;
 import io.etcd.jetcd.options.PutOption;
@@ -110,13 +109,6 @@ public class EtcdKeyValueStore implements KeyValueStore {
   }
 
   @Override
-  public long deletePrefix(String prefix) {
-    DeleteOption option = DeleteOption.newBuilder().withPrefix(toByteSequence(prefix)).build();
-
-    return waitFor(kv.delete(toByteSequence(prefix), option)).getHeader().getRevision();
-  }
-
-  @Override
   public TxnResult txn(List<Compare> conditions, List<KvOp> thenOps, List<KvOp> elseOps) {
     Cmp[] comparisons = conditions.stream().map(this::toCmp).toArray(Cmp[]::new);
 
@@ -136,8 +128,6 @@ public class EtcdKeyValueStore implements KeyValueStore {
           case VERSION -> CmpTarget.version(compare.number());
 
           case MOD_REVISION -> CmpTarget.modRevision(compare.number());
-
-          case VALUE -> CmpTarget.value(toByteSequence(compare.text()));
         };
 
     Cmp.Op operation =
@@ -152,27 +142,14 @@ public class EtcdKeyValueStore implements KeyValueStore {
   }
 
   private Op toOp(KvOp operation) {
-    if (operation instanceof KvOp.Put put) {
+    KvOp.Put put = (KvOp.Put) operation;
+    PutOption.Builder builder = PutOption.newBuilder();
 
-      PutOption.Builder builder = PutOption.newBuilder();
-
-      if (put.leaseId() != 0) {
-        builder.withLeaseId(put.leaseId());
-      }
-
-      return Op.put(toByteSequence(put.key()), toByteSequence(put.value()), builder.build());
+    if (put.leaseId() != 0) {
+      builder.withLeaseId(put.leaseId());
     }
 
-    KvOp.Delete delete = (KvOp.Delete) operation;
-
-    if (delete.prefix()) {
-      DeleteOption option =
-          DeleteOption.newBuilder().withPrefix(toByteSequence(delete.key())).build();
-
-      return Op.delete(toByteSequence(delete.key()), option);
-    }
-
-    return Op.delete(toByteSequence(delete.key()), DeleteOption.DEFAULT);
+    return Op.put(toByteSequence(put.key()), toByteSequence(put.value()), builder.build());
   }
 
   @Override

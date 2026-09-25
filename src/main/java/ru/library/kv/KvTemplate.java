@@ -41,10 +41,6 @@ public class KvTemplate {
     store.put(key, toJson(value));
   }
 
-  public <T> void putWithLease(String key, T value, long leaseId) {
-    store.put(key, toJson(value), leaseId);
-  }
-
   public <T> Optional<Versioned<T>> get(String key, Class<T> type) {
     return store.get(key).map(e -> wrap(e, type));
   }
@@ -59,28 +55,6 @@ public class KvTemplate {
 
   public long delete(String key) {
     return store.delete(key);
-  }
-
-  public long deletePrefix(String prefix) {
-    return store.deletePrefix(prefix);
-  }
-
-  public <T> boolean compareAndPut(String key, long expectedModRevision, T value) {
-    return store
-        .txn(
-            List.of(Compare.modRevision(key, Compare.Op.EQUAL, expectedModRevision)),
-            List.of(KvOp.put(key, toJson(value))),
-            List.of())
-        .succeeded();
-  }
-
-  public <T> boolean putIfAbsent(String key, T value) {
-    return store
-        .txn(
-            List.of(Compare.version(key, Compare.Op.EQUAL, 0)),
-            List.of(KvOp.put(key, toJson(value))),
-            List.of())
-        .succeeded();
   }
 
   private <T> Versioned<T> wrap(KvEntry e, Class<T> type) {
