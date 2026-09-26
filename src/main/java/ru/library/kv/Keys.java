@@ -11,32 +11,8 @@ public class Keys {
     this.p = props.kv().keyPrefix();
   }
 
-  public String events() {
-    return p + "/events/";
-  }
-
-  public String event(String id) {
-    return p + "/events/" + id;
-  }
-
   public String eventViews(String id) {
     return p + "/events/" + id + "/views";
-  }
-
-  public String orders() {
-    return p + "/orders/";
-  }
-
-  public String order(String id) {
-    return p + "/orders/" + id;
-  }
-
-  public String ordersByEvent(String e) {
-    return p + "/idx/orders-by-event/" + e + "/";
-  }
-
-  public String orderByEvent(String e, String o) {
-    return ordersByEvent(e) + o;
   }
 
   public String drafts() {
